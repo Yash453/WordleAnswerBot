@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Sep 27 00:54:04 2022
-
 @author: Yash
 """
 
