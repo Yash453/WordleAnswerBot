@@ -8,7 +8,7 @@ import numpy
 import pandas
 
 class Bot:
-    def __init__(self, game, filename='data/words.csv'):
+    def __init__(self, game, filename='word_data.csv'):
         self.vowels = ['A','E','I','O','U','Y']
         wordbank = pandas.read_csv(filename)
         wordbank = wordbank[wordbank['words'].str.len()==game.letters]
