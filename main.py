@@ -14,7 +14,7 @@ ROWS = 6
 LETTERS = 5
 GAMES = 100
 
-w_bank = pandas.read_csv('data/words.csv')
+w_bank = pandas.read_csv('word_data.csv')
 w_bank = w_bank[w_bank['words'].str.len()==LETTERS]
 w_bank['words'] = w_bank['words'].str.upper() #Convert all words to uppercase
 
