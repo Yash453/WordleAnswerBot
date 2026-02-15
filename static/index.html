@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wordle Solver &amp; Assist</title>
+<style>
+/* ── Reset & base ─────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#fff;color:#1a1a1b;
+     display:flex;flex-direction:column;align-items:center;min-height:100vh}
+
+/* ── Header ───────────────────────────────────────────────────── */
+header{width:100%;text-align:center;border-bottom:1px solid #d3d6da;padding:14px 0}
+header h1{font-size:32px;letter-spacing:4px;font-weight:800}
+header .sub{font-size:13px;color:#878a8c;margin-top:2px}
+
+/* ── Screens ──────────────────────────────────────────────────── */
+.screen{display:none;flex-direction:column;align-items:center;padding:20px 10px;width:100%;max-width:520px}
+.screen.active{display:flex}
+
+/* ── Menu ─────────────────────────────────────────────────────── */
+#menu-screen .menu-btn{
+    width:260px;padding:16px;margin:8px 0;border:none;border-radius:8px;
+    font-size:16px;font-weight:700;color:#fff;cursor:pointer;
+    transition:transform .1s, opacity .15s}
+#menu-screen .menu-btn:hover{opacity:.9;transform:scale(1.02)}
+.btn-assist{background:#6aaa64}
+.btn-solver{background:#c9b458}
+.btn-quit{background:#787c7e}
+
+/* ── Board grid ───────────────────────────────────────────────── */
+.board{display:grid;grid-template-rows:repeat(6,62px);grid-template-columns:repeat(5,62px);
+       gap:5px;margin:16px 0}
+.tile{
+    display:flex;align-items:center;justify-content:center;
+    width:62px;height:62px;border:2px solid #d3d6da;
+    font-size:28px;font-weight:bold;text-transform:uppercase;
+    color:#1a1a1b;transition:background .3s,border-color .3s,color .3s,transform .35s}
+.tile.G{background:#6aaa64;border-color:#6aaa64;color:#fff}
+.tile.Y{background:#c9b458;border-color:#c9b458;color:#fff}
+.tile.B{background:#787c7e;border-color:#787c7e;color:#fff}
+.tile.pop{animation:pop .15s ease-in-out}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}
+.tile.flip{animation:flip .45s ease-in-out}
+@keyframes flip{
+    0%{transform:rotateX(0)}
+    50%{transform:rotateX(90deg)}
+    100%{transform:rotateX(0)}
+}
+
+/* ── Status / messages ────────────────────────────────────────── */
+.status{font-size:15px;color:#878a8c;min-height:22px;margin:6px 0;text-align:center}
+.status.success{color:#6aaa64;font-weight:700}
+.status.fail{color:#c0392b;font-weight:700}
+
+/* ── Assist-specific ──────────────────────────────────────────── */
+.guess-row{display:flex;align-items:center;gap:8px;margin:10px 0}
+.guess-row input{
+    width:200px;padding:10px 14px;font-size:22px;font-weight:bold;
+    letter-spacing:6px;text-transform:uppercase;text-align:center;
+    border:2px solid #d3d6da;border-radius:6px;outline:none}
+.guess-row input:focus{border-color:#878a8c}
+.btn{padding:10px 20px;border:none;border-radius:6px;font-size:14px;font-weight:700;
+     color:#fff;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.88}
+.btn:disabled{opacity:.45;cursor:default}
+.btn-green{background:#6aaa64}
+.btn-yellow{background:#c9b458}
+.btn-grey{background:#787c7e}
+
+/* ── Color picker row ─────────────────────────────────────────── */
+.color-picker{display:flex;gap:5px;margin:8px 0}
+.color-picker .cpick{
+    width:62px;height:62px;display:flex;align-items:center;justify-content:center;
+    font-size:26px;font-weight:bold;border:2px solid #d3d6da;border-radius:6px;
+    cursor:pointer;color:#fff;background:#787c7e;
+    transition:background .15s,border-color .15s;user-select:none}
+.color-picker .cpick.G{background:#6aaa64;border-color:#6aaa64}
+.color-picker .cpick.Y{background:#c9b458;border-color:#c9b458}
+.color-picker .cpick.B{background:#787c7e;border-color:#787c7e}
+
+.suggestion-box{
+    margin:10px 0;padding:10px 18px;background:#f6f7f8;border-radius:8px;
+    font-size:15px;text-align:center;min-height:40px;line-height:40px}
+.suggestion-box strong{letter-spacing:3px;font-size:20px}
+
+/* ── Solver controls ──────────────────────────────────────────── */
+.solver-controls{display:flex;gap:10px;margin:12px 0}
+.solver-stats{font-size:13px;color:#878a8c;margin-top:6px;text-align:center}
+.answer-reveal{font-size:18px;font-weight:700;margin:6px 0;min-height:26px}
+
+/* ── Back link ────────────────────────────────────────────────── */
+.back-link{
+    align-self:flex-start;font-size:13px;color:#878a8c;cursor:pointer;
+    margin-bottom:4px;border:none;background:none;font-family:inherit}
+.back-link:hover{color:#1a1a1b}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>WORDLE</h1>
+    <div class="sub">Solver &amp; Assist</div>
+</header>
+
+<!-- ════════════════  MENU  ═══════════════════════════════════ -->
+<div id="menu-screen" class="screen active">
+    <div style="margin-top:40px"></div>
+    <button class="menu-btn btn-assist"  onclick="showAssist()">🔍&ensp;Game Assist</button>
+    <button class="menu-btn btn-solver"  onclick="showSolver()">🤖&ensp;Watch Solver</button>
+</div>
+
+<!-- ════════════════  ASSIST  ════════════════════════════════= -->
+<div id="assist-screen" class="screen">
+    <button class="back-link" onclick="showMenu()">← Back to menu</button>
+    <div class="board" id="assist-board"></div>
+    <div class="status" id="assist-status"></div>
+
+    <div class="suggestion-box" id="assist-suggestion">Press Start to begin…</div>
+
+    <div class="guess-row">
+        <input id="assist-input" type="text" maxlength="5" placeholder="GUESS" autocomplete="off" disabled>
+        <button class="btn btn-green" id="assist-set-btn" onclick="assistSetGuess()" disabled>Set</button>
+    </div>
+
+    <div style="font-size:13px;color:#878a8c;margin-bottom:4px">Click tiles to cycle color (Grey → Yellow → Green)</div>
+    <div class="color-picker" id="assist-colors"></div>
+
+    <button class="btn btn-green" id="assist-submit-btn" onclick="assistSubmit()" disabled style="margin-top:10px;padding:12px 30px;font-size:15px">
+        Submit Feedback
+    </button>
+
+    <button class="btn btn-green" id="assist-start-btn" onclick="assistStart()" style="margin-top:12px;padding:12px 30px;font-size:15px">
+        ▶&ensp;Start Assist
+    </button>
+</div>
+
+<!-- ════════════════  SOLVER  ════════════════════════════════ -->
+<div id="solver-screen" class="screen">
+    <button class="back-link" onclick="showMenu()">← Back to menu</button>
+    <div class="board" id="solver-board"></div>
+    <div class="status" id="solver-status">Press Start to watch the solver play.</div>
+    <div class="answer-reveal" id="solver-answer"></div>
+
+    <div class="solver-controls">
+        <button class="btn btn-green"  id="solver-start-btn" onclick="solverRun()">▶&ensp;Start</button>
+        <button class="btn btn-yellow" id="solver-new-btn"   onclick="solverReset()" disabled>🔄&ensp;New Game</button>
+    </div>
+    <div class="solver-stats" id="solver-stats"></div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   Globals
+   ───────────────────────────────────────────────────────────── */
+const ROWS = 6, COLS = 5;
+const COLOR_CYCLE = ["B","Y","G"];
+
+/* ── Screen switching ─────────────────────────────────────── */
+function showScreen(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+function showMenu()  { showScreen('menu-screen'); }
+function showAssist() { showScreen('assist-screen'); assistInit(); }
+function showSolver(){ showScreen('solver-screen'); solverInit(); }
+
+/* ═══════════════════════════════════════════════════════════
+   BOARD HELPERS
+   ═══════════════════════════════════════════════════════════ */
+function buildBoard(containerId){
+    const c = document.getElementById(containerId);
+    c.innerHTML = '';
+    for(let r=0;r<ROWS;r++)
+        for(let col=0;col<COLS;col++){
+            const t = document.createElement('div');
+            t.className = 'tile';
+            t.dataset.row = r;
+            t.dataset.col = col;
+            t.id = `${containerId}-${r}-${col}`;
+            c.appendChild(t);
+        }
+}
+
+function setTile(boardId, row, col, letter, color){
+    const t = document.getElementById(`${boardId}-${row}-${col}`);
+    if(!t) return;
+    t.textContent = letter || '';
+    t.className = 'tile' + (color ? ' '+color : '');
+}
+
+function setRowAnimated(boardId, row, letters, colors, delay){
+    /* Flip tiles one by one, left to right */
+    return new Promise(resolve => {
+        letters.forEach((l,i) => {
+            setTimeout(()=>{
+                const t = document.getElementById(`${boardId}-${row}-${i}`);
+                if(!t) return;
+                t.classList.add('flip');
+                /* half-way through flip, change content & color */
+                setTimeout(()=>{
+                    t.textContent = l;
+                    t.className = 'tile flip ' + (colors[i]||'');
+                }, 200);
+                if(i === letters.length - 1)
+                    setTimeout(resolve, 450);
+            }, i * 300);
+        });
+    });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ASSIST MODE
+   ═══════════════════════════════════════════════════════════ */
+let assistGuess = '';
+let assistColors = [];
+let assistRow = 0;
+let assistFinished = false;
+
+function assistInit(){
+    buildBoard('assist-board');
+    buildColorPicker();
+    assistGuess = '';
+    assistColors = Array(COLS).fill('B');
+    assistRow = 0;
+    assistFinished = false;
+    el('assist-status').textContent = '';
+    el('assist-status').className = 'status';
+    el('assist-suggestion').textContent = 'Press ▶ Start Assist to begin.';
+    el('assist-input').value = '';
+    el('assist-input').disabled = true;
+    el('assist-set-btn').disabled = true;
+    el('assist-submit-btn').disabled = true;
+    el('assist-start-btn').disabled = false;
+    el('assist-start-btn').style.display = '';
+}
+
+function buildColorPicker(){
+    const c = el('assist-colors');
+    c.innerHTML = '';
+    for(let i=0;i<COLS;i++){
+        const d = document.createElement('div');
+        d.className = 'cpick B';
+        d.dataset.idx = i;
+        d.onclick = ()=> cycleColor(i);
+        c.appendChild(d);
+    }
+}
+
+function cycleColor(idx){
+    if(assistFinished || !assistGuess) return;
+    const cur = assistColors[idx];
+    const nxt = COLOR_CYCLE[(COLOR_CYCLE.indexOf(cur)+1)%3];
+    assistColors[idx] = nxt;
+    const picks = el('assist-colors').children;
+    picks[idx].className = 'cpick '+nxt;
+}
+
+function el(id){ return document.getElementById(id); }
+
+async function assistStart(){
+    assistInit();
+    el('assist-start-btn').disabled = true;
+    el('assist-start-btn').style.display = 'none';
+    const res = await fetch('/assist/start',{method:'POST'});
+    const d = await res.json();
+    if(d.suggestion){
+        el('assist-suggestion').innerHTML = '💡 Suggested: <strong>'+d.suggestion+'</strong>';
+        el('assist-input').value = d.suggestion;
+    } else {
+        el('assist-suggestion').textContent = '⚠️ No candidates.';
+    }
+    el('assist-input').disabled = false;
+    el('assist-set-btn').disabled = false;
+    el('assist-input').focus();
+}
+
+function assistSetGuess(){
+    const raw = el('assist-input').value.trim().toUpperCase();
+    if(raw.length !== COLS || !/^[A-Z]+$/.test(raw)){
+        el('assist-status').textContent = '⚠️  Enter a valid 5-letter word.';
+        return;
+    }
+    assistGuess = raw;
+    assistColors = Array(COLS).fill('B');
+    const picks = el('assist-colors').children;
+    for(let i=0;i<COLS;i++){
+        picks[i].textContent = raw[i];
+        picks[i].className = 'cpick B';
+    }
+    el('assist-status').textContent = 'Click each tile to set its color, then Submit.';
+    el('assist-submit-btn').disabled = false;
+}
+
+/* also allow Enter key to set guess */
+document.addEventListener('DOMContentLoaded',()=>{
+    el('assist-input').addEventListener('keydown', e=>{
+        if(e.key==='Enter') assistSetGuess();
+    });
+});
+
+async function assistSubmit(){
+    if(assistFinished || !assistGuess) return;
+    el('assist-submit-btn').disabled = true;
+
+    /* Show on board immediately */
+    for(let i=0;i<COLS;i++) setTile('assist-board', assistRow, i, assistGuess[i], assistColors[i]);
+
+    const res = await fetch('/assist/submit',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({guess: assistGuess, colors: assistColors})
+    });
+    const d = await res.json();
+
+    if(d.error){ el('assist-status').textContent = '⚠️ '+d.error; el('assist-submit-btn').disabled=false; return; }
+
+    assistRow++;
+
+    if(d.solved){
+        el('assist-status').textContent = '🎉 '+d.message;
+        el('assist-status').className = 'status success';
+        el('assist-suggestion').textContent = '';
+        assistFinished = true;
+        return;
+    }
+    if(d.message){
+        el('assist-status').textContent = '😔 '+d.message;
+        el('assist-status').className = 'status fail';
+        el('assist-suggestion').textContent = '';
+        assistFinished = true;
+        return;
+    }
+    if(d.suggestion){
+        el('assist-suggestion').innerHTML = '💡 Suggested: <strong>'+d.suggestion+'</strong>';
+        el('assist-input').value = d.suggestion;
+    } else {
+        el('assist-suggestion').textContent = '⚠️ No more candidates.';
+        assistFinished = true;
+        return;
+    }
+
+    /* Reset picker for next round */
+    assistGuess = '';
+    assistColors = Array(COLS).fill('B');
+    const picks = el('assist-colors').children;
+    for(let i=0;i<COLS;i++){picks[i].textContent='';picks[i].className='cpick B';}
+    el('assist-submit-btn').disabled = false;
+    el('assist-input').focus();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SOLVER MODE
+   ═══════════════════════════════════════════════════════════ */
+let solverGames = 0, solverWins = 0, solverTotalMoves = 0;
+let solverAnimating = false;
+
+function solverInit(){
+    buildBoard('solver-board');
+    el('solver-status').textContent = 'Press Start to watch the solver play.';
+    el('solver-status').className = 'status';
+    el('solver-answer').textContent = '';
+    el('solver-start-btn').disabled = false;
+    el('solver-new-btn').disabled = true;
+    solverAnimating = false;
+}
+
+function solverReset(){
+    buildBoard('solver-board');
+    el('solver-status').textContent = 'Press Start to watch the solver play.';
+    el('solver-status').className = 'status';
+    el('solver-answer').textContent = '';
+    el('solver-start-btn').disabled = false;
+    el('solver-new-btn').disabled = true;
+}
+
+async function solverRun(){
+    el('solver-start-btn').disabled = true;
+    el('solver-new-btn').disabled = true;
+    buildBoard('solver-board');
+    el('solver-answer').textContent = '';
+    el('solver-status').textContent = 'Solving…';
+    el('solver-status').className = 'status';
+    solverAnimating = true;
+
+    const res = await fetch('/solver/run',{method:'POST'});
+    const d = await res.json();
+
+    /* Animate rows with flips (< 10 rows = animated, else instant) */
+    if(d.rows.length < 10){
+        for(let r=0; r<d.rows.length; r++){
+            if(!solverAnimating) break;
+            const row = d.rows[r];
+            el('solver-status').textContent = `Guess ${r+1}: ${row.letters.join('')}`;
+            await setRowAnimated('solver-board', r, row.letters, row.colors, 300);
+            if(r < d.rows.length - 1)
+                await sleep(400);
+        }
+    } else {
+        /* Instant display */
+        for(let r=0;r<d.rows.length;r++){
+            const row = d.rows[r];
+            for(let c=0;c<COLS;c++) setTile('solver-board',r,c,row.letters[c],row.colors[c]);
+        }
+    }
+
+    solverAnimating = false;
+    el('solver-answer').textContent = 'Answer: '+d.word;
+
+    solverGames++;
+    if(d.won){ solverWins++; solverTotalMoves += d.moves; }
+
+    if(d.won){
+        el('solver-status').textContent = `🎉  Solved in ${d.moves} guess(es)!`;
+        el('solver-status').className = 'status success';
+    } else {
+        el('solver-status').textContent = `😔  Did not solve.  Answer was ${d.word}`;
+        el('solver-status').className = 'status fail';
+    }
+
+    const pct = solverGames ? ((solverWins/solverGames)*100).toFixed(0) : 0;
+    const avg = solverWins  ? (solverTotalMoves/solverWins).toFixed(1) : '–';
+    el('solver-stats').textContent = `Session: ${solverGames} game(s)  |  Win: ${pct}%  |  Avg moves (wins): ${avg}`;
+
+    el('solver-new-btn').disabled = false;
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+</script>
+</body>
+</html>
