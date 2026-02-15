@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wordle Solver &amp; Assist</title>
+<style>
+/* ── Reset & base ─────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#fff;color:#1a1a1b;
+     display:flex;flex-direction:column;align-items:center;min-height:100vh}
+
+/* ── Header ───────────────────────────────────────────────────── */
+header{width:100%;text-align:center;border-bottom:1px solid #d3d6da;padding:14px 0}
+header h1{font-size:32px;letter-spacing:4px;font-weight:800}
+header .sub{font-size:13px;color:#878a8c;margin-top:2px}
+
+/* ── Screens ──────────────────────────────────────────────────── */
+.screen{display:none;flex-direction:column;align-items:center;padding:20px 10px;width:100%;max-width:520px}
+.screen.active{display:flex}
+
+/* ── Menu ─────────────────────────────────────────────────────── */
+#menu-screen .menu-btn{
+    width:260px;padding:16px;margin:8px 0;border:none;border-radius:8px;
+    font-size:16px;font-weight:700;color:#fff;cursor:pointer;
+    transition:transform .1s,opacity .15s}
+#menu-screen .menu-btn:hover{opacity:.9;transform:scale(1.02)}
+.btn-assist{background:#6aaa64}
+.btn-solver{background:#c9b458}
+
+/* ── Board grid ───────────────────────────────────────────────── */
+.board{display:grid;grid-template-rows:repeat(6,62px);grid-template-columns:repeat(5,62px);
+       gap:5px;margin:16px 0}
+.tile{
+    display:flex;align-items:center;justify-content:center;
+    width:62px;height:62px;border:2px solid #d3d6da;
+    font-size:28px;font-weight:bold;text-transform:uppercase;
+    color:#1a1a1b;transition:background .3s,border-color .3s,color .3s,transform .35s}
+.tile.G{background:#6aaa64;border-color:#6aaa64;color:#fff}
+.tile.Y{background:#c9b458;border-color:#c9b458;color:#fff}
+.tile.B{background:#787c7e;border-color:#787c7e;color:#fff}
+.tile.pop{animation:pop .15s ease-in-out}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}
+.tile.flip{animation:flip .45s ease-in-out}
+@keyframes flip{
+    0%{transform:rotateX(0)}
+    50%{transform:rotateX(90deg)}
+    100%{transform:rotateX(0)}
+}
+
+/* ── Status / messages ────────────────────────────────────────── */
+.status{font-size:15px;color:#878a8c;min-height:22px;margin:6px 0;text-align:center}
+.status.success{color:#6aaa64;font-weight:700}
+.status.fail{color:#c0392b;font-weight:700}
+
+/* ── Assist-specific ──────────────────────────────────────────── */
+.guess-row{display:flex;align-items:center;gap:8px;margin:10px 0}
+.guess-row input{
+    width:200px;padding:10px 14px;font-size:22px;font-weight:bold;
+    letter-spacing:6px;text-transform:uppercase;text-align:center;
+    border:2px solid #d3d6da;border-radius:6px;outline:none}
+.guess-row input:focus{border-color:#878a8c}
+.btn{padding:10px 20px;border:none;border-radius:6px;font-size:14px;font-weight:700;
+     color:#fff;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.88}
+.btn:disabled{opacity:.45;cursor:default}
+.btn-green{background:#6aaa64}
+.btn-yellow{background:#c9b458}
+.btn-grey{background:#787c7e}
+
+/* ── Color picker row ─────────────────────────────────────────── */
+.color-picker{display:flex;gap:5px;margin:8px 0}
+.color-picker .cpick{
+    width:62px;height:62px;display:flex;align-items:center;justify-content:center;
+    font-size:26px;font-weight:bold;border:2px solid #d3d6da;border-radius:6px;
+    cursor:pointer;color:#fff;background:#787c7e;
+    transition:background .15s,border-color .15s;user-select:none}
+.color-picker .cpick.G{background:#6aaa64;border-color:#6aaa64}
+.color-picker .cpick.Y{background:#c9b458;border-color:#c9b458}
+.color-picker .cpick.B{background:#787c7e;border-color:#787c7e}
+
+.suggestion-box{
+    margin:10px 0;padding:10px 18px;background:#f6f7f8;border-radius:8px;
+    font-size:15px;text-align:center;min-height:40px;line-height:40px}
+.suggestion-box strong{letter-spacing:3px;font-size:20px}
+
+/* ── Solver controls ──────────────────────────────────────────── */
+.solver-controls{display:flex;gap:10px;margin:12px 0}
+.solver-stats{font-size:13px;color:#878a8c;margin-top:6px;text-align:center}
+.answer-reveal{font-size:18px;font-weight:700;margin:6px 0;min-height:26px}
+
+/* ── Back link ────────────────────────────────────────────────── */
+.back-link{
+    align-self:flex-start;font-size:13px;color:#878a8c;cursor:pointer;
+    margin-bottom:4px;border:none;background:none;font-family:inherit}
+.back-link:hover{color:#1a1a1b}
+
+/* ── Loading overlay ──────────────────────────────────────────── */
+#loading-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;
+    background:rgba(255,255,255,.85);display:flex;align-items:center;
+    justify-content:center;z-index:999;font-size:18px;color:#878a8c}
+#loading-overlay.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">Loading word list…</div>
+
+<header>
+    <h1>WORDLE</h1>
+    <div class="sub">Solver &amp; Assist</div>
+</header>
+
+<!-- ════════════════  MENU  ═══════════════════════════════════ -->
+<div id="menu-screen" class="screen active">
+    <div style="margin-top:40px"></div>
+    <button class="menu-btn btn-assist" onclick="showAssist()">🔍&ensp;Game Assist</button>
+    <button class="menu-btn btn-solver" onclick="showSolver()">🤖&ensp;Watch Solver</button>
+</div>
+
+<!-- ════════════════  ASSIST  ════════════════════════════════= -->
+<div id="assist-screen" class="screen">
+    <button class="back-link" onclick="showMenu()">← Back to menu</button>
+    <div class="board" id="assist-board"></div>
+    <div class="status" id="assist-status"></div>
+
+    <div class="suggestion-box" id="assist-suggestion">Press Start to begin…</div>
+
+    <div class="guess-row">
+        <input id="assist-input" type="text" maxlength="5" placeholder="GUESS" autocomplete="off" disabled>
+        <button class="btn btn-green" id="assist-set-btn" onclick="assistSetGuess()" disabled>Set</button>
+    </div>
+
+    <div style="font-size:13px;color:#878a8c;margin-bottom:4px">Click tiles to cycle color (Grey → Yellow → Green)</div>
+    <div class="color-picker" id="assist-colors"></div>
+
+    <button class="btn btn-green" id="assist-submit-btn" onclick="assistSubmit()" disabled style="margin-top:10px;padding:12px 30px;font-size:15px">
+        Submit Feedback
+    </button>
+
+    <button class="btn btn-green" id="assist-start-btn" onclick="assistStart()" style="margin-top:12px;padding:12px 30px;font-size:15px">
+        ▶&ensp;Start Assist
+    </button>
+</div>
+
+<!-- ════════════════  SOLVER  ════════════════════════════════ -->
+<div id="solver-screen" class="screen">
+    <button class="back-link" onclick="showMenu()">← Back to menu</button>
+    <div class="board" id="solver-board"></div>
+    <div class="status" id="solver-status">Press Start to watch the solver play.</div>
+    <div class="answer-reveal" id="solver-answer"></div>
+
+    <div class="solver-controls">
+        <button class="btn btn-green"  id="solver-start-btn" onclick="solverRun()">▶&ensp;Start</button>
+        <button class="btn btn-yellow" id="solver-new-btn"   onclick="solverReset()" disabled>🔄&ensp;New Game</button>
+    </div>
+    <div class="solver-stats" id="solver-stats"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT — Game + Bot + UI (no server needed)
+     ══════════════════════════════════════════════════════════ -->
+<script>
+"use strict";
+
+/* ─────────────────────────────────────────────────────────────
+   Constants
+   ───────────────────────────────────────────────────────────── */
+const ROWS = 6, COLS = 5;
+const COLOR_CYCLE = ["B","Y","G"];
+const VOWELS = new Set(["A","E","I","O","U","Y"]);
+const ALPHA = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""));
+
+let WORD_LIST = []; // loaded from words.json
+
+/* ═════════════════════════════════════════════════════════════
+   GAME CLASS  (port of wordle_game.py)
+   ═════════════════════════════════════════════════════════════ */
+class Game {
+    constructor(answer, rows = ROWS, letters = COLS) {
+        this.numGuesses = 0;
+        this.answer = answer;
+        this.rows = rows;
+        this.letters = letters;
+        this.board = Array.from({length: rows}, () => Array(letters).fill(""));
+        this.colors = Array.from({length: rows}, () => Array(letters).fill(""));
+
+        this.wordHashTable = {};
+        if (answer) {
+            for (let x = 0; x < answer.length; x++) {
+                const l = answer[x];
+                if (this.wordHashTable[l]) {
+                    this.wordHashTable[l].count++;
+                    this.wordHashTable[l].pos.push(x);
+                } else {
+                    this.wordHashTable[l] = {count: 1, pos: [x]};
+                }
+            }
+        }
+    }
+
+    isEnd() {
+        // Last row used?
+        if (this.board[this.rows - 1].some(c => c !== "")) return true;
+        return this.gameResult()[0];
+    }
+
+    gameResult() {
+        for (let i = 0; i < this.board.length; i++) {
+            if (this.answer === this.board[i].join("")) return [true, i];
+        }
+        return [false, 99];
+    }
+
+    updateBoard(inputWord) {
+        const word = inputWord.toUpperCase();
+        // Deep-copy hash table
+        const wht = JSON.parse(JSON.stringify(this.wordHashTable));
+        const tempHT = {};
+
+        for (let x = 0; x < word.length; x++) {
+            const l = word[x];
+            this.board[this.numGuesses][x] = l;
+            if (tempHT[l]) tempHT[l].push(x);
+            else tempHT[l] = [x];
+        }
+
+        const colors = {G: [], Y: [], B: []};
+
+        for (const l of Object.keys(tempHT)) {
+            if (wht[l]) {
+                const greenTemp = [];
+                for (const p of tempHT[l]) {
+                    if (wht[l].pos.includes(p)) greenTemp.push(p);
+                }
+                for (const p of greenTemp) {
+                    tempHT[l] = tempHT[l].filter(v => v !== p);
+                }
+                colors.G.push(...greenTemp);
+
+                if (greenTemp.length < wht[l].count) {
+                    const yellowTemp = [];
+                    for (const p of tempHT[l]) {
+                        yellowTemp.push(p);
+                        if (yellowTemp.length === wht[l].count) break;
+                    }
+                    for (const p of yellowTemp) {
+                        tempHT[l] = tempHT[l].filter(v => v !== p);
+                    }
+                    colors.Y.push(...yellowTemp);
+                }
+                colors.B.push(...tempHT[l]);
+            } else {
+                colors.B.push(...tempHT[l]);
+                tempHT[l] = [];
+            }
+        }
+
+        for (const c of Object.keys(colors)) {
+            for (const p of colors[c]) {
+                this.colors[this.numGuesses][p] = c;
+            }
+        }
+        this.numGuesses++;
+    }
+
+    validGuess(inputWord) {
+        if (inputWord.length !== 5) return false;
+        for (const ch of inputWord.toUpperCase()) {
+            if (!ALPHA.has(ch)) return false;
+        }
+        return true;
+    }
+}
+
+/* ═════════════════════════════════════════════════════════════
+   BOT CLASS  (port of prediction_bot.py)
+   ═════════════════════════════════════════════════════════════ */
+class Bot {
+    constructor(game, wordList) {
+        this.game = game;
+        this.prediction = Array(game.letters).fill("");
+        this.yellowLetters = {};  // letter -> [positions]
+        this.greenLetters = [];   // letters to exclude entirely
+
+        // Build wordbank: [{word, vowelCount}]
+        this.wordbank = wordList.map(w => {
+            const unique = new Set(w.split(""));
+            let vc = 0;
+            for (const ch of unique) if (VOWELS.has(ch)) vc++;
+            return {word: w, vowelCount: vc};
+        });
+    }
+
+    parseBoard() {
+        if (this.game.numGuesses > 0) {
+            const row = this.game.numGuesses - 1;
+            for (let x = 0; x < this.game.letters; x++) {
+                const c = this.game.colors[row][x];
+                const letter = this.game.board[row][x];
+                if (c === "Y") {
+                    if (!this.yellowLetters[letter]) {
+                        this.yellowLetters[letter] = [x];
+                    } else {
+                        if (!this.yellowLetters[letter].includes(x))
+                            this.yellowLetters[letter].push(x);
+                    }
+                } else if (c === "G") {
+                    this.prediction[x] = letter;
+                } else { // B
+                    if (this.prediction.includes(letter)) {
+                        if (!this.yellowLetters[letter]) {
+                            this.yellowLetters[letter] = [x];
+                        } else {
+                            this.yellowLetters[letter].push(x);
+                        }
+                    } else if (!this.greenLetters.includes(letter)) {
+                        this.greenLetters.push(letter);
+                    }
+                }
+            }
+            this.greenLetters = this.greenLetters.filter(
+                l => !this.yellowLetters[l] && !this.prediction.includes(l)
+            );
+        }
+    }
+
+    calcLetterProbs() {
+        // For each position, calculate frequency of each letter
+        const probs = [];
+        for (let x = 0; x < this.game.letters; x++) {
+            const counts = {};
+            for (const entry of this.wordbank) {
+                const ch = entry.word[x];
+                counts[ch] = (counts[ch] || 0) + 1;
+            }
+            const total = this.wordbank.length;
+            const prob = {};
+            for (const ch of Object.keys(counts)) {
+                prob[ch] = counts[ch] / total;
+            }
+            probs.push(prob);
+        }
+        return probs;
+    }
+
+    chooseAction() {
+        this.parseBoard();
+
+        // Filter out words containing green (excluded) letters
+        if (this.greenLetters.length > 0) {
+            const gl = new Set(this.greenLetters);
+            this.wordbank = this.wordbank.filter(e => {
+                for (const ch of e.word) if (gl.has(ch)) return false;
+                return true;
+            });
+            this.greenLetters = [];
+        }
+
+        // Filter: must contain all yellow letters, but NOT at their known wrong positions
+        if (Object.keys(this.yellowLetters).length > 0) {
+            for (const [letter, positions] of Object.entries(this.yellowLetters)) {
+                this.wordbank = this.wordbank.filter(e => {
+                    if (!e.word.includes(letter)) return false;
+                    for (const pos of positions) {
+                        if (e.word[pos] === letter) return false;
+                    }
+                    return true;
+                });
+            }
+            this.yellowLetters = {};
+        }
+
+        // Filter: known green positions must match
+        for (let i = 0; i < this.prediction.length; i++) {
+            if (this.prediction[i] !== "") {
+                this.wordbank = this.wordbank.filter(e => e.word[i] === this.prediction[i]);
+            }
+        }
+
+        // Score each word
+        let probs = null;
+        if (this.wordbank.length > 5) {
+            probs = this.calcLetterProbs();
+        }
+
+        let bestScore = -Infinity;
+        let bestWords = [];
+
+        const needsVowel = !this.prediction.some(s => VOWELS.has(s));
+
+        for (const entry of this.wordbank) {
+            let score = 0;
+            if (probs) {
+                for (let x = 0; x < this.game.letters; x++) {
+                    if (this.prediction[x] === "") {
+                        score += (probs[x][entry.word[x]] || 0);
+                    }
+                }
+            }
+            if (needsVowel) {
+                score += entry.vowelCount / this.game.letters;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestWords = [entry.word];
+            } else if (score === bestScore) {
+                bestWords.push(entry.word);
+            }
+        }
+
+        if (bestWords.length === 0) throw new Error("No candidates");
+        return bestWords[Math.floor(Math.random() * bestWords.length)];
+    }
+}
+
+/* ═════════════════════════════════════════════════════════════
+   UI HELPERS
+   ═════════════════════════════════════════════════════════════ */
+function el(id) { return document.getElementById(id); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    el(id).classList.add('active');
+}
+function showMenu()  { showScreen('menu-screen'); }
+function showAssist() { showScreen('assist-screen'); assistInit(); }
+function showSolver() { showScreen('solver-screen'); solverInit(); }
+
+/* ── Board rendering ──────────────────────────────────────── */
+function buildBoard(containerId) {
+    const c = el(containerId);
+    c.innerHTML = '';
+    for (let r = 0; r < ROWS; r++)
+        for (let col = 0; col < COLS; col++) {
+            const t = document.createElement('div');
+            t.className = 'tile';
+            t.id = `${containerId}-${r}-${col}`;
+            c.appendChild(t);
+        }
+}
+
+function setTile(boardId, row, col, letter, color) {
+    const t = el(`${boardId}-${row}-${col}`);
+    if (!t) return;
+    t.textContent = letter || '';
+    t.className = 'tile' + (color ? ' ' + color : '');
+}
+
+function setRowAnimated(boardId, row, letters, colors) {
+    return new Promise(resolve => {
+        letters.forEach((l, i) => {
+            setTimeout(() => {
+                const t = el(`${boardId}-${row}-${i}`);
+                if (!t) return;
+                t.classList.add('flip');
+                setTimeout(() => {
+                    t.textContent = l;
+                    t.className = 'tile flip ' + (colors[i] || '');
+                }, 200);
+                if (i === letters.length - 1)
+                    setTimeout(resolve, 450);
+            }, i * 300);
+        });
+    });
+}
+
+/* ═════════════════════════════════════════════════════════════
+   ASSIST MODE
+   ═════════════════════════════════════════════════════════════ */
+let assistGame, assistBot;
+let assistGuess = '';
+let assistColors = [];
+let assistRow = 0;
+let assistFinished = false;
+
+function assistInit() {
+    buildBoard('assist-board');
+    buildColorPicker();
+    assistGuess = '';
+    assistColors = Array(COLS).fill('B');
+    assistRow = 0;
+    assistFinished = false;
+    el('assist-status').textContent = '';
+    el('assist-status').className = 'status';
+    el('assist-suggestion').textContent = 'Press ▶ Start Assist to begin.';
+    el('assist-input').value = '';
+    el('assist-input').disabled = true;
+    el('assist-set-btn').disabled = true;
+    el('assist-submit-btn').disabled = true;
+    el('assist-start-btn').disabled = false;
+    el('assist-start-btn').style.display = '';
+}
+
+function buildColorPicker() {
+    const c = el('assist-colors');
+    c.innerHTML = '';
+    for (let i = 0; i < COLS; i++) {
+        const d = document.createElement('div');
+        d.className = 'cpick B';
+        d.dataset.idx = i;
+        d.onclick = () => cycleColor(i);
+        c.appendChild(d);
+    }
+}
+
+function cycleColor(idx) {
+    if (assistFinished || !assistGuess) return;
+    const cur = assistColors[idx];
+    const nxt = COLOR_CYCLE[(COLOR_CYCLE.indexOf(cur) + 1) % 3];
+    assistColors[idx] = nxt;
+    el('assist-colors').children[idx].className = 'cpick ' + nxt;
+}
+
+function assistStart() {
+    buildBoard('assist-board');
+    buildColorPicker();
+    assistRow = 0;
+    assistFinished = false;
+
+    assistGame = new Game(null, ROWS, COLS);
+    assistBot = new Bot(assistGame, WORD_LIST);
+
+    el('assist-start-btn').disabled = true;
+    el('assist-start-btn').style.display = 'none';
+
+    try {
+        const suggestion = assistBot.chooseAction();
+        el('assist-suggestion').innerHTML = '💡 Suggested: <strong>' + suggestion + '</strong>';
+        el('assist-input').value = suggestion;
+    } catch (e) {
+        el('assist-suggestion').textContent = '⚠️ No candidates.';
+    }
+
+    el('assist-input').disabled = false;
+    el('assist-set-btn').disabled = false;
+    el('assist-input').focus();
+}
+
+function assistSetGuess() {
+    const raw = el('assist-input').value.trim().toUpperCase();
+    if (raw.length !== COLS || !/^[A-Z]+$/.test(raw)) {
+        el('assist-status').textContent = '⚠️  Enter a valid 5-letter word.';
+        return;
+    }
+    assistGuess = raw;
+    assistColors = Array(COLS).fill('B');
+    const picks = el('assist-colors').children;
+    for (let i = 0; i < COLS; i++) {
+        picks[i].textContent = raw[i];
+        picks[i].className = 'cpick B';
+    }
+    el('assist-status').textContent = 'Click each tile to set its color, then Submit.';
+    el('assist-submit-btn').disabled = false;
+}
+
+function assistSubmit() {
+    if (assistFinished || !assistGuess) return;
+    el('assist-submit-btn').disabled = true;
+
+    const guess = assistGuess;
+    const colors = [...assistColors];
+
+    // Show on board
+    for (let i = 0; i < COLS; i++) setTile('assist-board', assistRow, i, guess[i], colors[i]);
+
+    // Update game state for bot
+    assistGame.board[assistRow] = guess.split("");
+    assistGame.colors[assistRow] = [...colors];
+    assistGame.numGuesses++;
+    assistRow++;
+
+    // Solved?
+    if (colors.every(c => c === 'G')) {
+        el('assist-status').textContent = `🎉  Solved in ${assistRow} guess(es)! Word: ${guess}`;
+        el('assist-status').className = 'status success';
+        el('assist-suggestion').textContent = '';
+        assistFinished = true;
+        return;
+    }
+    if (assistRow >= ROWS) {
+        el('assist-status').textContent = '😔  All 6 guesses used.';
+        el('assist-status').className = 'status fail';
+        el('assist-suggestion').textContent = '';
+        assistFinished = true;
+        return;
+    }
+
+    // Next suggestion
+    try {
+        const suggestion = assistBot.chooseAction();
+        el('assist-suggestion').innerHTML = '💡 Suggested: <strong>' + suggestion + '</strong>';
+        el('assist-input').value = suggestion;
+    } catch (e) {
+        el('assist-suggestion').textContent = '⚠️ No more candidates.';
+        assistFinished = true;
+        return;
+    }
+
+    // Reset picker
+    assistGuess = '';
+    assistColors = Array(COLS).fill('B');
+    const picks = el('assist-colors').children;
+    for (let i = 0; i < COLS; i++) { picks[i].textContent = ''; picks[i].className = 'cpick B'; }
+    el('assist-submit-btn').disabled = false;
+    el('assist-input').focus();
+}
+
+/* Enter key shortcut */
+document.addEventListener('DOMContentLoaded', () => {
+    el('assist-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') assistSetGuess();
+    });
+});
+
+/* ═════════════════════════════════════════════════════════════
+   SOLVER MODE
+   ═════════════════════════════════════════════════════════════ */
+let solverGames = 0, solverWins = 0, solverTotalMoves = 0;
+let solverAnimating = false;
+
+function solverInit() {
+    buildBoard('solver-board');
+    el('solver-status').textContent = 'Press Start to watch the solver play.';
+    el('solver-status').className = 'status';
+    el('solver-answer').textContent = '';
+    el('solver-start-btn').disabled = false;
+    el('solver-new-btn').disabled = true;
+    solverAnimating = false;
+}
+
+function solverReset() {
+    buildBoard('solver-board');
+    el('solver-status').textContent = 'Press Start to watch the solver play.';
+    el('solver-status').className = 'status';
+    el('solver-answer').textContent = '';
+    el('solver-start-btn').disabled = false;
+    el('solver-new-btn').disabled = true;
+}
+
+async function solverRun() {
+    el('solver-start-btn').disabled = true;
+    el('solver-new-btn').disabled = true;
+    buildBoard('solver-board');
+    el('solver-answer').textContent = '';
+    el('solver-status').textContent = 'Solving…';
+    el('solver-status').className = 'status';
+    solverAnimating = true;
+
+    // Run solver synchronously (fast enough in JS)
+    const word = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+    const game = new Game(word, ROWS, COLS);
+    const bot = new Bot(game, WORD_LIST);
+
+    while (!game.isEnd()) {
+        const guess = bot.chooseAction();
+        if (game.validGuess(guess)) game.updateBoard(guess);
+        else break;
+    }
+
+    const result = game.gameResult();
+    const won = result[0];
+    const moves = won ? result[1] + 1 : game.numGuesses;
+
+    // Collect rows
+    const rowsData = [];
+    for (let i = 0; i < game.numGuesses; i++) {
+        rowsData.push({letters: game.board[i], colors: game.colors[i]});
+    }
+
+    // Animate (< 10 rows: step-by-step flip; otherwise instant)
+    if (rowsData.length < 10) {
+        for (let r = 0; r < rowsData.length; r++) {
+            if (!solverAnimating) break;
+            const row = rowsData[r];
+            el('solver-status').textContent = `Guess ${r + 1}: ${row.letters.join('')}`;
+            await setRowAnimated('solver-board', r, row.letters, row.colors);
+            if (r < rowsData.length - 1) await sleep(400);
+        }
+    } else {
+        for (let r = 0; r < rowsData.length; r++) {
+            const row = rowsData[r];
+            for (let c = 0; c < COLS; c++) setTile('solver-board', r, c, row.letters[c], row.colors[c]);
+        }
+    }
+
+    solverAnimating = false;
+    el('solver-answer').textContent = 'Answer: ' + word;
+
+    solverGames++;
+    if (won) { solverWins++; solverTotalMoves += moves; }
+
+    if (won) {
+        el('solver-status').textContent = `🎉  Solved in ${moves} guess(es)!`;
+        el('solver-status').className = 'status success';
+    } else {
+        el('solver-status').textContent = `😔  Did not solve.  Answer was ${word}`;
+        el('solver-status').className = 'status fail';
+    }
+
+    const pct = solverGames ? ((solverWins / solverGames) * 100).toFixed(0) : 0;
+    const avg = solverWins ? (solverTotalMoves / solverWins).toFixed(1) : '–';
+    el('solver-stats').textContent =
+        `Session: ${solverGames} game(s)  |  Win: ${pct}%  |  Avg moves (wins): ${avg}`;
+
+    el('solver-new-btn').disabled = false;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   INIT — load word list then enable UI
+   ═════════════════════════════════════════════════════════════ */
+(async function init() {
+    try {
+        const resp = await fetch('words.json');
+        WORD_LIST = await resp.json();
+        el('loading-overlay').classList.add('hidden');
+    } catch (e) {
+        el('loading-overlay').textContent = 'Error loading word list: ' + e.message;
+    }
+})();
+</script>
+</body>
+</html>
