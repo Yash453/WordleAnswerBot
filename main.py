@@ -17,8 +17,8 @@ GAMES = 100
 
 def load_word_bank():
     """Load and prepare the word bank from CSV."""
-    w_bank = pandas.read_csv('word_data.csv')
-    w_bank = w_bank[w_bank['words'].str.len() == LETTERS]
+    w_bank = pandas.read_csv('word_data.csv', dtype={'words': str}, keep_default_na=False)
+    w_bank = w_bank[w_bank['words'].str.len() == LETTERS].copy()
     w_bank['words'] = w_bank['words'].str.upper()
     return w_bank
 
@@ -33,10 +33,10 @@ def run_test_solver(w_bank, num_games=GAMES):
         bot = Bot(game)
         while game.is_end() == False:
             u_inp = bot.choose_action()
-            if game.valid_guess(u_inp) == True:
-                game.update_board(u_inp)
-            else:
-                print('ERROR: Word is not 5 Letters')
+            if u_inp is None or game.valid_guess(u_inp) == False:
+                print(f'ERROR: Solver has no valid guess for {word}')
+                break
+            game.update_board(u_inp)
         r = game.game_result()
         results.append({'word': word, 'result': r[0], 'moves': r[1] + 1})
     results = pandas.DataFrame(results)
@@ -52,8 +52,9 @@ def run_solver_single(w_bank):
     bot = Bot(game)
     while game.is_end() == False:
         u_inp = bot.choose_action()
-        if game.valid_guess(u_inp) == True:
-            game.update_board(u_inp)
+        if u_inp is None or game.valid_guess(u_inp) == False:
+            break
+        game.update_board(u_inp)
     return game, bot
 
 
@@ -94,9 +95,14 @@ def run_assist():
     bot = Bot(game)
     for i in range(ROWS):
         guess = bot.choose_action()
+        if guess is None:
+            print('\nNo words match that feedback. Check the colors you entered.\n')
+            break
         print(f'\nSuggested Word = {guess}\n')
-        u_inp = input('What was the result returned? [ex. YBGGY]?\n')
-        game.colors[i] = [s.upper() for s in str(u_inp)]
+        u_inp = input('What was the result returned? [ex. YBGGY]?\n').strip().upper()
+        while len(u_inp) != LETTERS or any(s not in 'GYB' for s in u_inp):
+            u_inp = input(f'Please enter {LETTERS} letters using G, Y or B [ex. YBGGY]\n').strip().upper()
+        game.colors[i] = list(u_inp)
         game.board[i] = [s for s in str(guess).upper()]
         game.num_guesses += 1
         if all(s == 'G' for s in game.colors[i]):

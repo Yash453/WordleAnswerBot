@@ -20,8 +20,8 @@ CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "word_data.c
 
 
 def load_word_bank():
-    w_bank = pandas.read_csv(CSV_PATH)
-    w_bank = w_bank[w_bank["words"].str.len() == LETTERS]
+    w_bank = pandas.read_csv(CSV_PATH, dtype={"words": str}, keep_default_na=False)
+    w_bank = w_bank[w_bank["words"].str.len() == LETTERS].copy()
     w_bank["words"] = w_bank["words"].str.upper()
     return w_bank
 
@@ -113,6 +113,7 @@ def assist_submit():
         suggestion = bot.choose_action()
     except Exception:
         suggestion = None
+    if suggestion is None:
         _assist_state["finished"] = True
 
     return jsonify({
@@ -136,8 +137,9 @@ def solver_run():
 
     while not game.is_end():
         guess = bot.choose_action()
-        if game.valid_guess(guess):
-            game.update_board(guess)
+        if guess is None or not game.valid_guess(guess):
+            break
+        game.update_board(guess)
 
     result = game.game_result()
     won = result[0]

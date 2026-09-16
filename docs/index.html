@@ -177,6 +177,24 @@ let WORD_LIST = []; // loaded from words.json
 /* ═════════════════════════════════════════════════════════════
    GAME CLASS  (port of wordle_game.py)
    ═════════════════════════════════════════════════════════════ */
+/* Wordle colors for guess vs answer: greens first, then each unmatched
+   answer letter turns at most one misplaced guess letter yellow. */
+function scoreGuess(guess, answer) {
+    const colors = Array(guess.length).fill("B");
+    const unmatched = {};
+    for (let x = 0; x < guess.length; x++) {
+        if (guess[x] === answer[x]) colors[x] = "G";
+        else unmatched[answer[x]] = (unmatched[answer[x]] || 0) + 1;
+    }
+    for (let x = 0; x < guess.length; x++) {
+        if (colors[x] !== "G" && unmatched[guess[x]] > 0) {
+            colors[x] = "Y";
+            unmatched[guess[x]]--;
+        }
+    }
+    return colors;
+}
+
 class Game {
     constructor(answer, rows = ROWS, letters = COLS) {
         this.numGuesses = 0;
@@ -185,19 +203,6 @@ class Game {
         this.letters = letters;
         this.board = Array.from({length: rows}, () => Array(letters).fill(""));
         this.colors = Array.from({length: rows}, () => Array(letters).fill(""));
-
-        this.wordHashTable = {};
-        if (answer) {
-            for (let x = 0; x < answer.length; x++) {
-                const l = answer[x];
-                if (this.wordHashTable[l]) {
-                    this.wordHashTable[l].count++;
-                    this.wordHashTable[l].pos.push(x);
-                } else {
-                    this.wordHashTable[l] = {count: 1, pos: [x]};
-                }
-            }
-        }
     }
 
     isEnd() {
@@ -215,58 +220,13 @@ class Game {
 
     updateBoard(inputWord) {
         const word = inputWord.toUpperCase();
-        // Deep-copy hash table
-        const wht = JSON.parse(JSON.stringify(this.wordHashTable));
-        const tempHT = {};
-
-        for (let x = 0; x < word.length; x++) {
-            const l = word[x];
-            this.board[this.numGuesses][x] = l;
-            if (tempHT[l]) tempHT[l].push(x);
-            else tempHT[l] = [x];
-        }
-
-        const colors = {G: [], Y: [], B: []};
-
-        for (const l of Object.keys(tempHT)) {
-            if (wht[l]) {
-                const greenTemp = [];
-                for (const p of tempHT[l]) {
-                    if (wht[l].pos.includes(p)) greenTemp.push(p);
-                }
-                for (const p of greenTemp) {
-                    tempHT[l] = tempHT[l].filter(v => v !== p);
-                }
-                colors.G.push(...greenTemp);
-
-                if (greenTemp.length < wht[l].count) {
-                    const yellowTemp = [];
-                    for (const p of tempHT[l]) {
-                        yellowTemp.push(p);
-                        if (yellowTemp.length === wht[l].count) break;
-                    }
-                    for (const p of yellowTemp) {
-                        tempHT[l] = tempHT[l].filter(v => v !== p);
-                    }
-                    colors.Y.push(...yellowTemp);
-                }
-                colors.B.push(...tempHT[l]);
-            } else {
-                colors.B.push(...tempHT[l]);
-                tempHT[l] = [];
-            }
-        }
-
-        for (const c of Object.keys(colors)) {
-            for (const p of colors[c]) {
-                this.colors[this.numGuesses][p] = c;
-            }
-        }
+        this.board[this.numGuesses] = word.split("");
+        this.colors[this.numGuesses] = scoreGuess(word, this.answer);
         this.numGuesses++;
     }
 
     validGuess(inputWord) {
-        if (inputWord.length !== 5) return false;
+        if (inputWord.length !== this.letters) return false;
         for (const ch of inputWord.toUpperCase()) {
             if (!ALPHA.has(ch)) return false;
         }
@@ -281,8 +241,7 @@ class Bot {
     constructor(game, wordList) {
         this.game = game;
         this.prediction = Array(game.letters).fill("");
-        this.yellowLetters = {};  // letter -> [positions]
-        this.greenLetters = [];   // letters to exclude entirely
+        this.rowsSeen = 0;
 
         // Build wordbank: [{word, vowelCount}]
         this.wordbank = wordList.map(w => {
@@ -293,36 +252,16 @@ class Bot {
         });
     }
 
+    /* Keep only words that would have produced exactly the colors shown for every new row */
     parseBoard() {
-        if (this.game.numGuesses > 0) {
-            const row = this.game.numGuesses - 1;
+        while (this.rowsSeen < this.game.numGuesses) {
+            const guess = this.game.board[this.rowsSeen].join("");
+            const colors = this.game.colors[this.rowsSeen].join("");
             for (let x = 0; x < this.game.letters; x++) {
-                const c = this.game.colors[row][x];
-                const letter = this.game.board[row][x];
-                if (c === "Y") {
-                    if (!this.yellowLetters[letter]) {
-                        this.yellowLetters[letter] = [x];
-                    } else {
-                        if (!this.yellowLetters[letter].includes(x))
-                            this.yellowLetters[letter].push(x);
-                    }
-                } else if (c === "G") {
-                    this.prediction[x] = letter;
-                } else { // B
-                    if (this.prediction.includes(letter)) {
-                        if (!this.yellowLetters[letter]) {
-                            this.yellowLetters[letter] = [x];
-                        } else {
-                            this.yellowLetters[letter].push(x);
-                        }
-                    } else if (!this.greenLetters.includes(letter)) {
-                        this.greenLetters.push(letter);
-                    }
-                }
+                if (colors[x] === "G") this.prediction[x] = guess[x];
             }
-            this.greenLetters = this.greenLetters.filter(
-                l => !this.yellowLetters[l] && !this.prediction.includes(l)
-            );
+            this.wordbank = this.wordbank.filter(e => scoreGuess(guess, e.word).join("") === colors);
+            this.rowsSeen++;
         }
     }
 
@@ -345,39 +284,10 @@ class Bot {
         return probs;
     }
 
+    /* Best remaining word, or null if no word fits the feedback so far */
     chooseAction() {
         this.parseBoard();
-
-        // Filter out words containing green (excluded) letters
-        if (this.greenLetters.length > 0) {
-            const gl = new Set(this.greenLetters);
-            this.wordbank = this.wordbank.filter(e => {
-                for (const ch of e.word) if (gl.has(ch)) return false;
-                return true;
-            });
-            this.greenLetters = [];
-        }
-
-        // Filter: must contain all yellow letters, but NOT at their known wrong positions
-        if (Object.keys(this.yellowLetters).length > 0) {
-            for (const [letter, positions] of Object.entries(this.yellowLetters)) {
-                this.wordbank = this.wordbank.filter(e => {
-                    if (!e.word.includes(letter)) return false;
-                    for (const pos of positions) {
-                        if (e.word[pos] === letter) return false;
-                    }
-                    return true;
-                });
-            }
-            this.yellowLetters = {};
-        }
-
-        // Filter: known green positions must match
-        for (let i = 0; i < this.prediction.length; i++) {
-            if (this.prediction[i] !== "") {
-                this.wordbank = this.wordbank.filter(e => e.word[i] === this.prediction[i]);
-            }
-        }
+        if (this.wordbank.length === 0) return null;
 
         // Score each word
         let probs = null;
@@ -410,7 +320,6 @@ class Bot {
             }
         }
 
-        if (bestWords.length === 0) throw new Error("No candidates");
         return bestWords[Math.floor(Math.random() * bestWords.length)];
     }
 }
@@ -526,11 +435,11 @@ function assistStart() {
     el('assist-start-btn').disabled = true;
     el('assist-start-btn').style.display = 'none';
 
-    try {
-        const suggestion = assistBot.chooseAction();
+    const suggestion = assistBot.chooseAction();
+    if (suggestion) {
         el('assist-suggestion').innerHTML = '💡 Suggested: <strong>' + suggestion + '</strong>';
         el('assist-input').value = suggestion;
-    } catch (e) {
+    } else {
         el('assist-suggestion').textContent = '⚠️ No candidates.';
     }
 
@@ -589,12 +498,12 @@ function assistSubmit() {
     }
 
     // Next suggestion
-    try {
-        const suggestion = assistBot.chooseAction();
+    const suggestion = assistBot.chooseAction();
+    if (suggestion) {
         el('assist-suggestion').innerHTML = '💡 Suggested: <strong>' + suggestion + '</strong>';
         el('assist-input').value = suggestion;
-    } catch (e) {
-        el('assist-suggestion').textContent = '⚠️ No more candidates.';
+    } else {
+        el('assist-suggestion').textContent = '⚠️ No words match that feedback. Check the tile colors.';
         assistFinished = true;
         return;
     }
@@ -656,7 +565,7 @@ async function solverRun() {
 
     while (!game.isEnd()) {
         const guess = bot.chooseAction();
-        if (game.validGuess(guess)) game.updateBoard(guess);
+        if (guess && game.validGuess(guess)) game.updateBoard(guess);
         else break;
     }
 

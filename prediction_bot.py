@@ -7,18 +7,19 @@ import random
 import numpy
 import pandas
 
+from wordle_game import score_guess
+
 class Bot:
     def __init__(self, game, filename='word_data.csv'):
         self.vowels = ['A','E','I','O','U','Y']
-        wordbank = pandas.read_csv(filename)
-        wordbank = wordbank[wordbank['words'].str.len()==game.letters]
+        wordbank = pandas.read_csv(filename, dtype={'words': str}, keep_default_na=False) #Keep words like FALSE and NULL as text
+        wordbank = wordbank[wordbank['words'].str.len()==game.letters].copy()
         wordbank['words'] = wordbank['words'].str.upper() #Convert all words to uppercase
         wordbank['vowel_count'] = wordbank['words'].apply(lambda x: ''.join(set(x))).str.count('|'.join(self.vowels)) #Count amount of vowels in words
         self.wordbank = wordbank
         self.game = game
         self.prediction = ['' for _ in range(game.letters)]
-        self.yellow_letters = {}
-        self.green_letters = []
+        self.rows_seen = 0
 
     def calc_letter_probs(self):
         for x in range(self.game.letters):
@@ -26,45 +27,24 @@ class Bot:
             self.wordbank[f'p-{x}'] = self.wordbank['words'].str[x].map(counts)
 
     def parse_board(self):
-        if self.game.num_guesses > 0:
-            g_hold = []
-            for x, c in enumerate(self.game.colors[self.game.num_guesses - 1]):
-                letter = self.game.board[self.game.num_guesses - 1][x]
-                if c == 'Y':
-                    if letter not in self.yellow_letters:
-                        self.yellow_letters[letter] = [x]
-                    else:
-                        if x not in self.yellow_letters[letter]:
-                            self.yellow_letters[letter].append(x)
-                elif c == 'G':
-                    self.prediction[x] = letter
-                else:
-                    if letter in self.prediction:
-                        if letter not in self.yellow_letters:
-                            self.yellow_letters[letter] = [x]
-                        else:
-                            self.yellow_letters[letter].append(x)
-                    elif letter not in self.green_letters:
-                        self.green_letters.append(letter)
-            self.green_letters = [l for l in self.green_letters if l not in self.yellow_letters and l not in self.prediction]
+        #Keep only words that would have produced exactly the colors shown for every new row
+        while self.rows_seen < self.game.num_guesses:
+            guess = ''.join(self.game.board[self.rows_seen])
+            colors = list(self.game.colors[self.rows_seen])
+            for x, c in enumerate(colors):
+                if c == 'G':
+                    self.prediction[x] = guess[x]
+            consistent = self.wordbank['words'].map(lambda w: score_guess(guess, w) == colors)
+            self.wordbank = self.wordbank[consistent].copy()
+            self.rows_seen += 1
 
     def choose_action(self):
+        """Return the best remaining word, or None if no word fits the feedback so far."""
         self.parse_board()
-        if len(self.green_letters) > 0:
-            self.wordbank = self.wordbank[~self.wordbank['words'].str.contains('|'.join(self.green_letters))]
-            self.green_letters = []
-        if len(self.yellow_letters) > 0:
-            yellow_string = '^' + ''.join(fr'(?=.*{l})' for l in self.yellow_letters)
-            self.wordbank = self.wordbank[self.wordbank['words'].str.contains(yellow_string)]
-            for s, p in self.yellow_letters.items():
-                for i in p:
-                    self.wordbank = self.wordbank[self.wordbank['words'].str[i]!=s]
-            self.yellow_letters = {}
-        for i, s in enumerate(self.prediction):
-            if s != '':
-                self.wordbank = self.wordbank[self.wordbank['words'].str[i]==s]
+        if len(self.wordbank) == 0:
+            return None
         self.wordbank['w-score'] = [0] * len(self.wordbank)
-        if len(self.wordbank) > 5:
+        if len(self.wordbank) > 5 or 'p-0' not in self.wordbank:
             self.calc_letter_probs() #Recalculate letter position probability
         for x in range(self.game.letters):
             if self.prediction[x] == '':

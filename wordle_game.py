@@ -3,24 +3,34 @@
 @author: Yash
 """
 
-from copy import deepcopy
+from collections import Counter
+
+
+def score_guess(guess, answer):
+    """Return Wordle colors ('G', 'Y', 'B') for guess against answer.
+
+    Greens are assigned first; each remaining answer letter can then turn at most
+    one misplaced guess letter yellow, left to right, so repeated letters are
+    colored the same way Wordle colors them.
+    """
+    colors = ['B'] * len(guess)
+    unmatched = Counter()
+    for x, (g, a) in enumerate(zip(guess, answer)):
+        if g == a:
+            colors[x] = 'G'
+        else:
+            unmatched[a] += 1
+    for x, g in enumerate(guess):
+        if colors[x] != 'G' and unmatched[g] > 0:
+            colors[x] = 'Y'
+            unmatched[g] -= 1
+    return colors
+
 
 class Game:
     def __init__(self, answer, rows=6, letters=5):
         self.num_guesses = 0
         self.answer = answer
-        self.word_hash_table = {}
-        
-        self.alph = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
-
-        if answer is not None:
-            for x, letter in enumerate(answer):
-                if letter in self.word_hash_table:
-                    self.word_hash_table[letter]['count'] += 1
-                    self.word_hash_table[letter]['pos'].append(x)
-                else:
-                    self.word_hash_table[letter] = {'count':1, 'pos':[x]}
-        
         self.rows = rows
         self.letters = letters
         self.board = [['' for _ in range(letters)] for _ in range(rows)]
@@ -45,45 +55,11 @@ class Game:
         return win
 
     def update_board(self, input_word):
-        word_hash_table = deepcopy(self.word_hash_table)
-        temp_hash_table = {}
-        for x, l in enumerate(str(input_word).upper()):
-            self.board[self.num_guesses][x] = l
-            if l in temp_hash_table:
-                temp_hash_table[l].append(x)
-            else:
-                temp_hash_table[l] = [x]
-        colors = {'G':[],'Y':[],'B':[]}
-        for l in temp_hash_table:
-            if l in word_hash_table:
-                green_temp = []
-                for p in temp_hash_table[l]:
-                    if p in word_hash_table[l]['pos']:
-                        green_temp.append(p)
-                for p in green_temp:
-                    temp_hash_table[l].remove(p)
-                colors['G'] += green_temp
-                if len(green_temp) < word_hash_table[l]['count']:
-                    yellow_temp = []
-                    for p in temp_hash_table[l]:
-                        yellow_temp.append(p)
-                        if len(yellow_temp) == word_hash_table[l]['count']:
-                            break
-                    for p in yellow_temp:
-                        temp_hash_table[l].remove(p)
-                    colors['Y'] += yellow_temp
-                for p in temp_hash_table[l]:
-                    colors['B'].append(p)
-            else:
-                colors['B'] += temp_hash_table[l]
-                temp_hash_table[l] = []
-        for c in colors:
-            for p in colors[c]:
-                self.colors[self.num_guesses][p] = c
+        word = str(input_word).upper()
+        self.board[self.num_guesses] = list(word)
+        self.colors[self.num_guesses] = score_guess(word, self.answer)
         self.num_guesses += 1
 
     def valid_guess(self, input_word):
-        if len(input_word) == 5 and False not in [False for s in str(input_word).upper() if s not in self.alph]:
-            return True
-        else:
-            return False
+        word = str(input_word).upper()
+        return len(word) == self.letters and all('A' <= s <= 'Z' for s in word)

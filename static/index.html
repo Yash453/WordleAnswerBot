@@ -336,7 +336,7 @@ async function assistSubmit(){
         el('assist-suggestion').innerHTML = '💡 Suggested: <strong>'+d.suggestion+'</strong>';
         el('assist-input').value = d.suggestion;
     } else {
-        el('assist-suggestion').textContent = '⚠️ No more candidates.';
+        el('assist-suggestion').textContent = '⚠️ No words match that feedback. Check the tile colors.';
         assistFinished = true;
         return;
     }
