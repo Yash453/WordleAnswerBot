@@ -7,6 +7,7 @@ import random
 import numpy
 import pandas
 
+from feedback_parser import parse_feedback
 from prediction_bot import Bot
 from wordle_game import Game
 
@@ -90,6 +91,28 @@ def run_play_game(w_bank):
     return game
 
 
+def ask_colors(guess):
+    """Prompt until the tile colors for guess are known, e.g. YBGGY, emoji squares, or a description."""
+    prompt = "What was the result returned? [ex. YBGGY, 🟩⬛🟨⬛⬛, or 'C green, A yellow, rest grey']\n"
+    while True:
+        u_inp = input(prompt).strip()
+        prompt = 'Please enter the colors again\n'
+        if not u_inp:
+            continue
+        result = parse_feedback(guess, u_inp)
+        if result['error']:
+            print(result['error'])
+            continue
+        colors = ''.join(c or '?' for c in result['colors'])
+        if result['unclear']:
+            print(f"Read as {colors}, but tile(s) {', '.join(map(str, result['unclear']))} are unclear.")
+            continue
+        if result['source'] == 'code':
+            return list(colors)
+        if input(f'Read as {colors} for {guess}. Press Enter to accept, or type anything to re-enter.\n').strip() == '':
+            return list(colors)
+
+
 def run_assist():
     """Run the assist mode in the terminal."""
     print('GAME ASSIST ACTIVATED\n---------------------')
@@ -101,10 +124,7 @@ def run_assist():
             print('\nNo words match that feedback. Check the colors you entered.\n')
             break
         print(f'\nSuggested Word = {guess}\n')
-        u_inp = input('What was the result returned? [ex. YBGGY]?\n').strip().upper()
-        while len(u_inp) != LETTERS or any(s not in 'GYB' for s in u_inp):
-            u_inp = input(f'Please enter {LETTERS} letters using G, Y or B [ex. YBGGY]\n').strip().upper()
-        game.colors[i] = list(u_inp)
+        game.colors[i] = ask_colors(guess)
         game.board[i] = [s for s in str(guess).upper()]
         game.num_guesses += 1
         if all(s == 'G' for s in game.colors[i]):

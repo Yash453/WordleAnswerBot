@@ -79,6 +79,10 @@ header .sub{font-size:13px;color:#878a8c;margin-top:2px}
 .color-picker .cpick.G{background:#6aaa64;border-color:#6aaa64}
 .color-picker .cpick.Y{background:#c9b458;border-color:#c9b458}
 .color-picker .cpick.B{background:#787c7e;border-color:#787c7e}
+.color-picker .cpick.unclear{outline:3px dashed #c0392b;outline-offset:2px}
+.guess-row input.feedback-input{
+    width:min(320px,62vw);font-size:14px;font-weight:normal;letter-spacing:0;
+    text-transform:none;text-align:left}
 
 .suggestion-box{
     margin:10px 0;padding:10px 18px;background:#f6f7f8;border-radius:8px;
@@ -126,6 +130,12 @@ header .sub{font-size:13px;color:#878a8c;margin-top:2px}
 
     <div style="font-size:13px;color:#878a8c;margin-bottom:4px">Click tiles to cycle color (Grey → Yellow → Green)</div>
     <div class="color-picker" id="assist-colors"></div>
+
+    <div class="guess-row">
+        <input id="assist-feedback" class="feedback-input" type="text" maxlength="300" autocomplete="off" disabled
+               placeholder="…or type them: GBYBB, 🟩⬛🟨⬛⬛, C green, rest grey">
+        <button class="btn btn-yellow" id="assist-parse-btn" onclick="assistParseFeedback()" disabled>Read</button>
+    </div>
 
     <button class="btn btn-green" id="assist-submit-btn" onclick="assistSubmit()" disabled style="margin-top:10px;padding:12px 30px;font-size:15px">
         Submit Feedback
@@ -231,6 +241,9 @@ function assistInit(){
     el('assist-input').value = '';
     el('assist-input').disabled = true;
     el('assist-set-btn').disabled = true;
+    el('assist-feedback').value = '';
+    el('assist-feedback').disabled = true;
+    el('assist-parse-btn').disabled = true;
     el('assist-submit-btn').disabled = true;
     el('assist-start-btn').disabled = false;
     el('assist-start-btn').style.display = '';
@@ -273,6 +286,8 @@ async function assistStart(){
     }
     el('assist-input').disabled = false;
     el('assist-set-btn').disabled = false;
+    el('assist-feedback').disabled = false;
+    el('assist-parse-btn').disabled = false;
     el('assist-input').focus();
 }
 
@@ -298,7 +313,45 @@ document.addEventListener('DOMContentLoaded',()=>{
     el('assist-input').addEventListener('keydown', e=>{
         if(e.key==='Enter') assistSetGuess();
     });
+    el('assist-feedback').addEventListener('keydown', e=>{
+        if(e.key==='Enter') assistParseFeedback();
+    });
 });
+
+/* Fill the color picker from typed feedback; unclear tiles are outlined for the player to set */
+async function assistParseFeedback(){
+    if(assistFinished) return;
+    if(!assistGuess) assistSetGuess();
+    const text = el('assist-feedback').value.trim();
+    if(!assistGuess || !text) return;
+
+    el('assist-parse-btn').disabled = true;
+    el('assist-status').textContent = 'Reading colors…';
+    try{
+        const res = await fetch('/assist/parse',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({guess: assistGuess, feedback: text})
+        });
+        const d = await res.json();
+        if(!d.colors || d.error){
+            el('assist-status').textContent = '⚠️ '+(d.error || 'Could not read those colors.');
+            return;
+        }
+        const picks = el('assist-colors').children;
+        for(let i=0;i<COLS;i++){
+            if(d.colors[i]) assistColors[i] = d.colors[i];
+            picks[i].className = 'cpick '+assistColors[i]+(d.unclear.includes(i+1) ? ' unclear' : '');
+        }
+        el('assist-status').textContent = d.unclear.length
+            ? `Couldn't tell tile ${d.unclear.join(', ')} — click to set, then Submit.`
+            : 'Colors filled in. Check them, then Submit.';
+    } catch(e){
+        el('assist-status').textContent = '⚠️ Could not read those colors.';
+    } finally {
+        el('assist-parse-btn').disabled = false;
+    }
+}
 
 async function assistSubmit(){
     if(assistFinished || !assistGuess) return;
@@ -346,6 +399,7 @@ async function assistSubmit(){
     assistColors = Array(COLS).fill('B');
     const picks = el('assist-colors').children;
     for(let i=0;i<COLS;i++){picks[i].textContent='';picks[i].className='cpick B';}
+    el('assist-feedback').value = '';
     el('assist-submit-btn').disabled = false;
     el('assist-input').focus();
 }

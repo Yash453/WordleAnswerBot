@@ -6,10 +6,12 @@ Wordle Solver & Assist – Web UI (Flask)
 
 import os
 import random
+import re
 
 from flask import Flask, request, jsonify, send_from_directory
 import pandas
 
+from feedback_parser import parse_feedback
 from prediction_bot import Bot
 from wordle_game import Game
 
@@ -124,6 +126,21 @@ def assist_submit():
         "suggestion": suggestion,
         "message": None,
     })
+
+
+@app.route("/assist/parse", methods=["POST"])
+def assist_parse():
+    """Read tile colors from typed feedback (codes, emoji, or a description via TypeSafe)."""
+    data = request.get_json(silent=True) or {}
+    guess = str(data.get("guess", "")).upper()
+    feedback = str(data.get("feedback", "")).strip()
+
+    if not re.fullmatch(f"[A-Z]{{{LETTERS}}}", guess):
+        return jsonify({"error": "Set a 5-letter guess first."}), 400
+    if not feedback or len(feedback) > 300:
+        return jsonify({"error": "Describe the colors in 300 characters or fewer."}), 400
+
+    return jsonify(parse_feedback(guess, feedback))
 
 
 # ── Solver endpoints ────────────────────────────────────────────────────

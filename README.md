@@ -6,6 +6,13 @@ This program uses a combination of statistics and logical filtering to automatic
 - `docs/index.html` — the same solver in JavaScript for GitHub Pages (no server needed).
 - `python -m unittest discover -s tests` — run the tests.
 
+## Entering colors in Assist mode
+Assist mode (terminal and web UI) accepts the colors Wordle showed as a code (`GBYBB`, `g b y b b`), emoji squares
+(`🟩⬛🟨⬛⬛`), or plain words (`C green, A yellow, rest grey`). Codes and emoji are read in code. Descriptions are read
+by TypeSafe (`feedback_parser.py`, one question per tile) when `TYPESAFE_API_KEY` is set; tiles it can't pin down are
+flagged for you to set by hand, and the web UI always lets you check the tiles before submitting. The GitHub Pages
+version keeps the click-to-set tiles only, since it has no server to hold the API key.
+
 ## Word bank
 `word_data.csv` holds every word the bot may guess:
 
