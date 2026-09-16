@@ -16,9 +16,11 @@ GAMES = 100
 
 
 def load_word_bank():
-    """Load and prepare the word bank from CSV."""
+    """Load the possible answers from the word bank CSV."""
     w_bank = pandas.read_csv('word_data.csv', dtype={'words': str}, keep_default_na=False)
     w_bank = w_bank[w_bank['words'].str.len() == LETTERS].copy()
+    if 'answer' in w_bank:
+        w_bank = w_bank[w_bank['answer'] == 1] #Answers come from the Wordle answer list; the bot may guess any word
     w_bank['words'] = w_bank['words'].str.upper()
     return w_bank
 

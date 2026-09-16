@@ -51,6 +51,8 @@ class Bot:
                 self.wordbank['w-score'] += self.wordbank[f'p-{x}']
         if True not in [True for s in self.prediction if s in self.vowels]:
             self.wordbank['w-score'] += self.wordbank['vowel_count'] / self.game.letters
+        if 'commonness' in self.wordbank:
+            self.wordbank['w-score'] *= self.wordbank['commonness'] #Favor familiar words (see scripts/score_commonness.py)
         mv_bank = self.wordbank[self.wordbank['w-score']==self.wordbank['w-score'].max()]
         result = random.choice(mv_bank['words'].tolist())
         return result

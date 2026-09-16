@@ -22,6 +22,8 @@ CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "word_data.c
 def load_word_bank():
     w_bank = pandas.read_csv(CSV_PATH, dtype={"words": str}, keep_default_na=False)
     w_bank = w_bank[w_bank["words"].str.len() == LETTERS].copy()
+    if "answer" in w_bank:
+        w_bank = w_bank[w_bank["answer"] == 1]
     w_bank["words"] = w_bank["words"].str.upper()
     return w_bank
 

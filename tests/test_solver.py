@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -73,7 +74,8 @@ class BotTest(unittest.TestCase):
 
     def test_answer_never_filtered_out(self):
         rng = random.Random(0)
-        answers = Bot(Game(None), filename=CSV_PATH).wordbank['words'].tolist()
+        bank = Bot(Game(None), filename=CSV_PATH).wordbank
+        answers = bank[bank['answer'] == 1]['words'].tolist()
         for answer in rng.sample(answers, 40):
             random.seed(answer)
             game = Game(answer)
@@ -83,6 +85,23 @@ class BotTest(unittest.TestCase):
                 self.assertIsNotNone(guess, answer)
                 self.assertIn(answer, set(bot.wordbank['words']))
                 game.update_board(guess)
+
+
+class CommonnessTest(unittest.TestCase):
+    def test_bank_has_weights_and_answers(self):
+        bank = Bot(Game(None), filename=CSV_PATH).wordbank
+        self.assertTrue(bank['commonness'].between(0, 1).all())
+        self.assertGreater((bank['answer'] == 1).sum(), 2000)
+        self.assertGreater(len(bank), (bank['answer'] == 1).sum())
+
+    def test_commonness_breaks_letter_frequency_ties(self):
+        # BRAKE and BRAVE have identical letter-position and vowel scores
+        with tempfile.TemporaryDirectory() as tmp:
+            for common, rare in [('BRAVE', 'BRAKE'), ('BRAKE', 'BRAVE')]:
+                path = os.path.join(tmp, 'bank.csv')
+                with open(path, 'w') as f:
+                    f.write(f'words,answer,commonness\n{common.lower()},1,0.9\n{rare.lower()},1,0.2\n')
+                self.assertEqual(Bot(Game(None), filename=path).choose_action(), common)
 
 
 if __name__ == '__main__':

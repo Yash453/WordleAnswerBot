@@ -172,7 +172,8 @@ const COLOR_CYCLE = ["B","Y","G"];
 const VOWELS = new Set(["A","E","I","O","U","Y"]);
 const ALPHA = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""));
 
-let WORD_LIST = []; // loaded from words.json
+let ANSWERS = [];       // possible answers, loaded from words.json
+let WORD_WEIGHTS = {};  // every guessable word -> commonness in [0, 1] (scripts/score_commonness.py)
 
 /* ═════════════════════════════════════════════════════════════
    GAME CLASS  (port of wordle_game.py)
@@ -238,17 +239,17 @@ class Game {
    BOT CLASS  (port of prediction_bot.py)
    ═════════════════════════════════════════════════════════════ */
 class Bot {
-    constructor(game, wordList) {
+    constructor(game, wordWeights) {
         this.game = game;
         this.prediction = Array(game.letters).fill("");
         this.rowsSeen = 0;
 
-        // Build wordbank: [{word, vowelCount}]
-        this.wordbank = wordList.map(w => {
+        // Build wordbank: [{word, vowelCount, commonness}]
+        this.wordbank = Object.entries(wordWeights).map(([w, commonness]) => {
             const unique = new Set(w.split(""));
             let vc = 0;
             for (const ch of unique) if (VOWELS.has(ch)) vc++;
-            return {word: w, vowelCount: vc};
+            return {word: w, vowelCount: vc, commonness};
         });
     }
 
@@ -289,11 +290,11 @@ class Bot {
         this.parseBoard();
         if (this.wordbank.length === 0) return null;
 
-        // Score each word
-        let probs = null;
-        if (this.wordbank.length > 5) {
-            probs = this.calcLetterProbs();
+        // Score each word (like the Python bot, keep the last letter probabilities once 5 or fewer words remain)
+        if (this.wordbank.length > 5 || !this.probs) {
+            this.probs = this.calcLetterProbs();
         }
+        const probs = this.probs;
 
         let bestScore = -Infinity;
         let bestWords = [];
@@ -312,6 +313,7 @@ class Bot {
             if (needsVowel) {
                 score += entry.vowelCount / this.game.letters;
             }
+            score *= entry.commonness;  // favor familiar words
             if (score > bestScore) {
                 bestScore = score;
                 bestWords = [entry.word];
@@ -430,7 +432,7 @@ function assistStart() {
     assistFinished = false;
 
     assistGame = new Game(null, ROWS, COLS);
-    assistBot = new Bot(assistGame, WORD_LIST);
+    assistBot = new Bot(assistGame, WORD_WEIGHTS);
 
     el('assist-start-btn').disabled = true;
     el('assist-start-btn').style.display = 'none';
@@ -559,9 +561,9 @@ async function solverRun() {
     solverAnimating = true;
 
     // Run solver synchronously (fast enough in JS)
-    const word = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+    const word = ANSWERS[Math.floor(Math.random() * ANSWERS.length)];
     const game = new Game(word, ROWS, COLS);
-    const bot = new Bot(game, WORD_LIST);
+    const bot = new Bot(game, WORD_WEIGHTS);
 
     while (!game.isEnd()) {
         const guess = bot.chooseAction();
@@ -623,7 +625,9 @@ async function solverRun() {
 (async function init() {
     try {
         const resp = await fetch('words.json');
-        WORD_LIST = await resp.json();
+        const data = await resp.json();
+        ANSWERS = data.answers;
+        WORD_WEIGHTS = data.words;
         el('loading-overlay').classList.add('hidden');
     } catch (e) {
         el('loading-overlay').textContent = 'Error loading word list: ' + e.message;

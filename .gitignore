@@ -46,3 +46,6 @@ pip-wheel-metadata/
 # dotenv
 .env
 .env.*
+
+# TypeSafe judgment cache (scripts/score_commonness.py)
+.cache/
